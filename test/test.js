@@ -41,3 +41,63 @@ assert.equal(report.warningCount, 0);
 repoFiles.forEach((file, index) => {
   assert(report.results[index].filePath.endsWith(file));
 });
+
+const getNewAccessToken = () => {
+  return new Promise((resolve, reject) => {
+    const params = querystring.stringify({
+      grant_type: 'refresh_token',
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      redirect_uri: 'http://localhost:3003/signin',
+      scope: 'read_homecoach',
+    });
+
+    const options = {
+      hostname: 'api.atom.com',
+      path: '/oauth2/token',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+      },
+    };
+
+    const callback = function(response) {
+      console.log('in call back ' + response);
+      response.on('error', function(e) {
+        console.log('error', e);
+      });
+      let resp = '';
+
+      response.on('data', function(chunk) {
+        resp += chunk;
+      });
+
+      response.on('end', function() {
+        resp = JSON.parse(resp);
+        if (response.statusCode == '200') {
+          firebase
+              .ref('/system/setting/')
+              .once('value')
+              .then(function(snapshot) {
+                fbConfig = snapshot.val();
+                fbConfig.accessToken = resp.access_token;
+                fbConfig.refreshToken = resp.refresh_token;
+                firebase.ref('/system/setting/').set(fbConfig);
+                accessToken = resp.access_token;
+                resolve(resp.access_token);
+              });
+        } else {
+          reject(response);
+        }
+      });
+    };
+    const request = https.request(options, callback);
+    request.on('error', function(e) {
+      console.log('There is a problem with your request:', e.message);
+    });
+
+    request.write(params);
+    request.end();
+  });
+};
